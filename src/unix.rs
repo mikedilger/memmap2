@@ -248,6 +248,26 @@ impl MmapInner {
             }
         }
     }
+
+    pub fn lock(&self) -> io::Result<()> {
+        unsafe {
+            if libc::mlock(self.ptr, self.len) != 0 {
+                Err(io::Error::last_os_error())
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    pub fn unlock(&self) -> io::Result<()> {
+        unsafe {
+            if libc::munlock(self.ptr, self.len) != 0 {
+                Err(io::Error::last_os_error())
+            } else {
+                Ok(())
+            }
+        }
+    }
 }
 
 impl Drop for MmapInner {

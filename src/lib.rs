@@ -629,6 +629,22 @@ impl Mmap {
     pub fn advise(&self, advice: Advice) -> Result<()> {
         self.inner.advise(advice)
     }
+
+    /// Lock the whole memory map into RAM. Only supported on Unix.
+    ///
+    /// See [mlock()](https://man7.org/linux/man-pages/man2/mlock.2.html) map page.
+    #[cfg(unix)]
+    pub fn lock(&mut self) -> Result<()> {
+        self.inner.lock()
+    }
+
+    /// Unlock the whole memory map. Only supported on Unix.
+    ///
+    /// See [munlock()](https://man7.org/linux/man-pages/man2/munlock.2.html) map page.
+    #[cfg(unix)]
+    pub fn unlock(&mut self) -> Result<()> {
+        self.inner.unlock()
+    }
 }
 
 #[cfg(feature = "stable_deref_trait")]
@@ -1006,6 +1022,22 @@ impl MmapMut {
     pub fn advise(&self, advice: Advice) -> Result<()> {
         self.inner.advise(advice)
     }
+
+    /// Lock the whole memory map into RAM. Only supported on Unix.
+    ///
+    /// See [mlock()](https://man7.org/linux/man-pages/man2/mlock.2.html) map page.
+    #[cfg(unix)]
+    pub fn lock(&mut self) -> Result<()> {
+        self.inner.lock()
+    }
+
+    /// Unlock the whole memory map. Only supported on Unix.
+    ///
+    /// See [munlock()](https://man7.org/linux/man-pages/man2/munlock.2.html) map page.
+    #[cfg(unix)]
+    pub fn unlock(&mut self) -> Result<()> {
+        self.inner.unlock()
+    }
 }
 
 #[cfg(feature = "stable_deref_trait")]
@@ -1056,7 +1088,7 @@ mod test {
 
     #[cfg(unix)]
     use crate::advice::Advice;
-    use std::fs::OpenOptions;
+    use std::fs::{self, OpenOptions};
     use std::io::{Read, Write};
     #[cfg(unix)]
     use std::os::unix::io::AsRawFd;
@@ -1585,5 +1617,57 @@ mod test {
 
         // read values back
         assert_eq!(&incr[..], &mmap[..]);
+    }
+
+    /// Returns true if a non-zero amount of memory is locked.
+    #[cfg(target_os = "linux")]
+    fn is_locked() -> bool {
+        let status = &fs::read_to_string("/proc/self/status")
+            .expect("/proc/self/status should be available");
+        for line in status.lines() {
+            if line.starts_with("VmLck:") {
+                let numbers = line.replace(|c: char| !c.is_ascii_digit(), "");
+                return numbers != "0";
+            }
+        }
+        panic!("cannot get VmLck information")
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn lock() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = tempdir.path().join("mmap_lock");
+
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(&path)
+            .unwrap();
+        file.set_len(128).unwrap();
+
+        let mut mmap = unsafe { Mmap::map(&file).unwrap() };
+        #[cfg(target_os = "linux")]
+        assert!(!is_locked());
+
+        mmap.lock().expect("mmap lock should be supported on unix");
+        #[cfg(target_os = "linux")]
+        assert!(is_locked());
+
+        mmap.lock()
+            .expect("mmap lock again should not cause problems");
+        #[cfg(target_os = "linux")]
+        assert!(is_locked());
+
+        mmap.unlock()
+            .expect("mmap unlock should be supported on unix");
+        #[cfg(target_os = "linux")]
+        assert!(!is_locked());
+
+        mmap.unlock()
+            .expect("mmap unlock again should not cause problems");
+        #[cfg(target_os = "linux")]
+        assert!(!is_locked());
     }
 }
