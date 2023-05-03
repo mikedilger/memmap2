@@ -47,6 +47,11 @@ mod advice;
 #[cfg(unix)]
 pub use crate::advice::Advice;
 
+#[cfg(unix)]
+mod append;
+#[cfg(unix)]
+pub use crate::append::MmapAppend;
+
 use std::fmt;
 #[cfg(not(any(unix, windows)))]
 use std::fs::File;
@@ -340,6 +345,13 @@ impl MmapOptions {
 
         MmapInner::map(self.get_len(&file)?, desc.0, self.offset, self.populate)
             .map(|inner| Mmap { inner })
+    }
+
+    pub unsafe fn map_append<T: MmapAsRawDesc>(&self, file: T) -> Result<MmapAppend> {
+        let desc = file.as_raw_desc();
+
+        MmapInner::map_mut(self.get_len(&file)?, desc.0, self.offset, self.populate)
+            .map(|inner| MmapAppend { inner })
     }
 
     /// Creates a readable and executable memory map backed by a file.
